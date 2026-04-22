@@ -1,0 +1,10 @@
+{
+  "name": "{{PROJECT_NAME}}",
+  "version": "1.0.0",
+  "description": "{{PROJECT_DESCRIPTION}}",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "type": "module"
+}

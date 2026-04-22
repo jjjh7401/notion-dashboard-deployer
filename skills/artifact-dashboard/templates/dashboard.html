@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+/* ==== Theme CSS (치환됨) ==== */
+{{theme_css}}
+
+/* ==== Layout ==== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 24px;
+  min-height: 100vh;
+}
+.header {
+  max-width: 1400px;
+  margin: 0 auto 32px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+}
+.header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+.header .meta { font-size: 13px; color: var(--muted); display: flex; gap: 16px; }
+.header .meta a { color: var(--accent); text-decoration: none; }
+.container { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+.kpi-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+.kpi-card .label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.kpi-card .value { font-size: 32px; font-weight: 700; color: var(--accent); }
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+}
+.chart-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+.chart-card h3 { font-size: 14px; margin-bottom: 12px; color: var(--muted); }
+.chart-card canvas { max-height: 280px; }
+
+.scoreboard {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  overflow-x: auto;
+}
+.scoreboard h3 { font-size: 14px; margin-bottom: 12px; color: var(--muted); }
+.scoreboard table { width: 100%; border-collapse: collapse; }
+.scoreboard th, .scoreboard td {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.scoreboard th { color: var(--muted); font-weight: 500; }
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.record-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 13px;
+}
+.record-card .title { font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+.record-card .tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--tag-bg);
+  color: var(--tag-fg);
+  border-radius: 10px;
+  font-size: 11px;
+  margin-right: 4px;
+}
+.progress-bar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.progress-bar > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+
+.loading, .error {
+  text-align: center;
+  padding: 60px;
+  color: var(--muted);
+}
+.error { color: #e74c3c; }
+
+@media (max-width: 600px) {
+  body { padding: 16px; }
+  .header h1 { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>{{title}}</h1>
+    <div class="meta">
+      <span id="record-count">—건</span>
+      <span>•</span>
+      <span id="last-fetched">—</span>
+      <span>•</span>
+      <a href="{{notion_db_url}}" target="_blank" rel="noopener">Notion DB →</a>
+    </div>
+  </div>
+
+  <div class="container" id="app">
+    <div class="loading">Notion에서 데이터 조회 중...</div>
+  </div>
+
+<script>
+// ==== 설정 (치환됨) ====
+const REFRESH_INTERVAL_MS = {{refresh_interval_ms}};
+const API_ENDPOINT = "/api/notion";
+
+// ==== 대시보드 구성 (치환됨) ====
+const DASHBOARD_CONFIG = {{dashboard_config_json}};
+
+// ==== 메인 ====
+async function loadAndRender() {
+  const app = document.getElementById("app");
+  try {
+    const res = await fetch(API_ENDPOINT);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error + (data.hint ? ": " + data.hint : ""));
+
+    document.getElementById("record-count").textContent = `${data.count}건`;
+    document.getElementById("last-fetched").textContent = new Date(data.fetchedAt).toLocaleString("ko-KR");
+    renderDashboard(app, data.pages);
+  } catch (e) {
+    app.innerHTML = `<div class="error">⚠ 오류: ${e.message}</div>`;
+    console.error(e);
+  }
+}
+
+function renderDashboard(root, records) {
+  root.innerHTML = "";
+
+  // KPI 섹션
+  if (DASHBOARD_CONFIG.kpis && DASHBOARD_CONFIG.kpis.length) {
+    const kpiGrid = el("div", "kpi-grid");
+    DASHBOARD_CONFIG.kpis.forEach(kpi => {
+      kpiGrid.appendChild(renderKPI(kpi, records));
+    });
+    root.appendChild(kpiGrid);
+  }
+
+  // Charts 섹션
+  if (DASHBOARD_CONFIG.charts && DASHBOARD_CONFIG.charts.length) {
+    const chartGrid = el("div", "chart-grid");
+    DASHBOARD_CONFIG.charts.forEach((chart, i) => {
+      chartGrid.appendChild(renderChart(chart, records, `chart-${i}`));
+    });
+    root.appendChild(chartGrid);
+  }
+
+  // Scoreboards 섹션
+  if (DASHBOARD_CONFIG.scoreboards && DASHBOARD_CONFIG.scoreboards.length) {
+    DASHBOARD_CONFIG.scoreboards.forEach(sb => {
+      root.appendChild(renderScoreboard(sb, records));
+    });
+  }
+
+  // 레코드 카드 섹션
+  const cardGrid = el("div", "card-grid");
+  records.forEach(r => cardGrid.appendChild(renderRecord(r)));
+  root.appendChild(cardGrid);
+}
+
+// ==== 렌더러들 ====
+function renderKPI(kpi, records) {
+  const card = el("div", "kpi-card");
+  card.innerHTML = `<div class="label">${kpi.label}</div><div class="value">${computeKPI(kpi, records)}</div>`;
+  return card;
+}
+
+function computeKPI(kpi, records) {
+  const vals = records.map(r => r[kpi.field]).filter(v => v !== null && v !== undefined);
+  if (kpi.type === "count") return records.length;
+  if (kpi.type === "avg" && vals.length) {
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return kpi.format === "percent" ? Math.round(avg * 100) + "%" : Math.round(avg);
+  }
+  if (kpi.type === "sum") return vals.reduce((a, b) => a + b, 0);
+  if (kpi.type === "max") return Math.max(...vals);
+  if (kpi.type === "min") return Math.min(...vals);
+  return "—";
+}
+
+function renderChart(cfg, records, canvasId) {
+  const card = el("div", "chart-card");
+  card.innerHTML = `<h3>${cfg.title}</h3><canvas id="${canvasId}"></canvas>`;
+  setTimeout(() => drawChart(cfg, records, canvasId), 0);
+  return card;
+}
+
+function drawChart(cfg, records, canvasId) {
+  const ctx = document.getElementById(canvasId).getContext("2d");
+  const grouped = {};
+  records.forEach(r => {
+    const key = r[cfg.groupBy] || "미분류";
+    grouped[key] = (grouped[key] || 0) + 1;
+  });
+  new Chart(ctx, {
+    type: cfg.chartType || "doughnut",
+    data: {
+      labels: Object.keys(grouped),
+      datasets: [{
+        data: Object.values(grouped),
+        backgroundColor: getThemeColors()
+      }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+}
+
+function renderScoreboard(cfg, records) {
+  const wrap = el("div", "scoreboard");
+  const title = document.createElement("h3");
+  title.textContent = cfg.title || `${cfg.groupBy} 스코어보드`;
+  wrap.appendChild(title);
+
+  const grouped = {};
+  records.forEach(r => {
+    const key = r[cfg.groupBy] || "미분류";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(r);
+  });
+
+  const table = document.createElement("table");
+  const header = `<tr><th>${cfg.groupBy}</th><th>건수</th><th>평균 ${cfg.metric}</th></tr>`;
+  table.innerHTML = `<thead>${header}</thead>`;
+  const tbody = document.createElement("tbody");
+  Object.entries(grouped).forEach(([k, rows]) => {
+    const avg = rows.reduce((a, r) => a + (r[cfg.metric] || 0), 0) / rows.length;
+    const val = cfg.format === "percent" ? Math.round(avg * 100) + "%" : Math.round(avg);
+    tbody.innerHTML += `<tr><td>${k}</td><td>${rows.length}</td><td>${val}</td></tr>`;
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function renderRecord(r) {
+  const card = el("div", "record-card");
+  const title = r.title || r["프로젝트명"] || r.name || "제목 없음";
+  const team = r.team || r["팀"] || "";
+  const progress = r.progress !== undefined ? r.progress : (r["진척도"] || 0);
+  const progressPct = Math.round(progress * 100);
+  card.innerHTML = `
+    <div class="title">${title}</div>
+    <div>${team ? `<span class="tag">${team}</span>` : ""}</div>
+    <div class="progress-bar"><div style="width: ${progressPct}%"></div></div>
+    <div style="margin-top: 4px; font-size: 11px; color: var(--muted);">${progressPct}%</div>
+  `;
+  return card;
+}
+
+function el(tag, cls) { const e = document.createElement(tag); e.className = cls; return e; }
+
+function getThemeColors() {
+  const style = getComputedStyle(document.body);
+  return [
+    style.getPropertyValue("--chart-1").trim() || "#3498db",
+    style.getPropertyValue("--chart-2").trim() || "#2ecc71",
+    style.getPropertyValue("--chart-3").trim() || "#f39c12",
+    style.getPropertyValue("--chart-4").trim() || "#e74c3c",
+    style.getPropertyValue("--chart-5").trim() || "#9b59b6"
+  ];
+}
+
+// ==== 초기 로드 + 자동 갱신 ====
+loadAndRender();
+setInterval(loadAndRender, REFRESH_INTERVAL_MS);
+</script>
+</body>
+</html>
