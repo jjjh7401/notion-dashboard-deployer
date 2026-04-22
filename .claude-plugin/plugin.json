@@ -1,0 +1,18 @@
+{
+  "name": "notion-dashboard-deployer",
+  "version": "0.1.0",
+  "description": "업로드한 문서(MD/PDF/DOCX)로 Notion DB를 초기 구축하고 Cowork 아티팩트로 제작한 HTML 대시보드를 Vercel(Notion API 프록시) + GitHub 정적 호스팅으로 배포해 팀원이 URL로 실시간 조회할 수 있게 하는 플러그인입니다.",
+  "author": {
+    "name": "정재현",
+    "team": "영상제작부문"
+  },
+  "keywords": [
+    "notion",
+    "dashboard",
+    "vercel",
+    "github",
+    "document-to-db",
+    "team-sharing",
+    "cowork-artifact"
+  ]
+}
